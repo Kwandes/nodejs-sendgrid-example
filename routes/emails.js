@@ -6,12 +6,15 @@ export const emailsRouter = Router();
 
 emailsRouter.get("/", (req, res) => {
   res.send({
-    inviteEmail: "POST /emails/invite/:receipientsEmail",
+    inviteEmail: "POST /emails/alert/:receipientsEmail",
     customEmail: "POST /emails/custom/:receipientsEmail",
   });
 });
 
-emailsRouter.post("/invite/:receipientsEmail", (req, res) => {
+/**
+ * Send a dynamic template from Sendgrid to specified email address.
+ */
+emailsRouter.post("/alert/:receipientsEmail", (req, res) => {
   const receiptient = req.params.receipientsEmail;
   // Validate the email
   if (!isEmailValid(receiptient)) {
@@ -22,17 +25,41 @@ emailsRouter.post("/invite/:receipientsEmail", (req, res) => {
       message: "Validation failed for the provided email",
       path: "/emails/invite/:receipientsEmail",
     });
+    return;
   }
-  // Process the email
+
+  // Send the actual email
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  const msg = {
+    to: receiptient,
+    from: process.env.SENDGRID_FROM_DOMAIN,
+    templateId: process.env.SENDGRID_ALERT_TEMPLATE_ID,
+  };
+
+  sgMail
+    .send(msg)
+    .then((response) => {
+      console.log(response[0].statusCode);
+    })
+    .catch((error) => {
+      console.error(error);
+
+      console.error(error.response.body);
+    });
+
   res.status(202).send({
-    message: "Sending an invite email based on a template",
+    message: "Sending an email with your custom content",
   });
 });
 
-// TODO - add ability to pass the title and body
-// TODO - write the Readme
+/**
+ * Send an email with specified subject and body to the given email address.
+ */
 emailsRouter.post("/custom/:receipientsEmail", (req, res) => {
   const receiptient = req.params.receipientsEmail;
+  const subject = req.body.subject;
+  const body = req.body.body;
+
   // Validate the email
   if (!isEmailValid(receiptient)) {
     res.status(400).send({
@@ -42,33 +69,38 @@ emailsRouter.post("/custom/:receipientsEmail", (req, res) => {
       message: "Validation failed for the provided email",
       path: "/emails/custom/:receipientsEmail",
     });
+    return;
   }
 
+  if (subject === undefined) {
+    res.status(400).send({
+      timestamp: new Date().toISOString(),
+      status: 400,
+      error: "Bad Request",
+      message: "Request body json needs to contain a subject field (string)",
+      path: "/emails/custom/:receipientsEmail",
+    });
+    return;
+  }
+
+  if (body === undefined) {
+    res.status(400).send({
+      timestamp: new Date().toISOString(),
+      status: 400,
+      error: "Bad Request",
+      message: "Request body json needs to contain a body field (string)",
+      path: "/emails/custom/:receipientsEmail",
+    });
+    return;
+  }
+
+  // Send the actual email
   sgMail.setApiKey(process.env.SENDGRID_API_KEY);
   const msg = {
     to: receiptient,
     from: process.env.SENDGRID_FROM_DOMAIN,
-    subject: "ALERT! You've been attacked",
-    text: "The blackwall netrunners are currently diving into your ICE and trying to break through!",
-    html: `<strong>!!! WARNING !!! Malware detected!</strong>
-    <br>
-    Your computer has been attacked by (3) daemons. Our system detected: (2) attempt(s) to obtain your personal data, (1) attempt(s) to corrupt your neural processor.
-    <br>
-    <strong>IMMEDIATE ACTION REQUIRED.</strong>
-    <br>
-    Our quick threat neutralization software can prevent identity theft and implant hijacking. Remember! Hostile netrunners can infiltrate your nervous system and force you to commit terrible crimes such as:
-    <br>
-    - fraudulent bank transfers
-    <br>
-    - assault
-    <br>
-    - theft and/or armed robbery
-    <br>
-    - suicide
-    <br>
-    To protect yourself, click the SCAN NOW button. Our sophisticated anti-daemon software will eliminate all threats immediately!
-    <br>
-    If you do not scan in the next (5) minute(s) (17) second(s), your operating system may suffer irreversible damage. Protect yourself now!`,
+    subject: subject,
+    html: body,
   };
 
   sgMail
